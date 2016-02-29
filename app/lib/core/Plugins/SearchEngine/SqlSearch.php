@@ -615,7 +615,6 @@ class WLPlugSearchEngineSqlSearch extends BaseSearchPlugin implements IWLPlugSea
 					$va_raw_terms = $va_raw_terms_escaped = array();
 					
 					$vs_fld_num = $vs_table_num = $t_table = null;
-					
 					switch(get_class($o_lucene_query_element)) {
 						case 'Zend_Search_Lucene_Search_Query_Range':
 							$va_lower_term = $o_lucene_query_element->getLowerTerm();
@@ -750,7 +749,11 @@ class WLPlugSearchEngineSqlSearch extends BaseSearchPlugin implements IWLPlugSea
 							}
 							break;
 						case 'Zend_Search_Lucene_Search_Query_Phrase':
-	if ($this->getOption('strictPhraseSearching')) {
+							// dont do strict phrase searching for modified and created
+							$o_first_term = array_shift($o_lucene_query_element->getQueryTerms());
+							list($vs_first_term_table, $_, $_) = explode('.', $o_first_term->field);
+
+	if ($this->getOption('strictPhraseSearching') && !in_array($vs_first_term_table, array('modified', 'created'))) {
 						 	$va_words = array();
 						 	foreach($o_lucene_query_element->getQueryTerms() as $o_term) {
 								if (!$vs_access_point && ($vs_field = $o_term->field)) { $vs_access_point = $vs_field; }
@@ -784,21 +787,13 @@ class WLPlugSearchEngineSqlSearch extends BaseSearchPlugin implements IWLPlugSea
 							
 							$va_temp_tables = array();
 							$vn_w = 0;
-		//LIBIS
-		$increment = 1;
-		$qr_increment = mysql_query("SELECT variable_value b
-                                                                                     FROM information_schema.GLOBAL_VARIABLES
-                                                                                     WHERE VARIABLE_NAME = 'AUTO_INCREMENT_INCREMENT'");
-		$incr = mysql_fetch_assoc($qr_increment);
-		if (isset($incr) && is_array($incr)) { $increment = $incr['b']; }
-		//LIBIS
 							foreach($va_words as $vs_word) {
 								$vn_w++;
 								$vs_temp_table = 'ca_sql_search_phrase_'.md5($pn_subject_tablenum."/".$vs_word."/".$vn_w);
 								$this->_createTempTable($vs_temp_table);
 								$vs_sql = "
 									INSERT INTO {$vs_temp_table}
-									SELECT swi.index_id + {$increment}, 1
+									SELECT swi.index_id + 1, 1
 									FROM ca_sql_search_words sw 
 									INNER JOIN ca_sql_search_word_index AS swi ON sw.word_id = swi.word_id 
 									".(sizeof($va_temp_tables) ? " INNER JOIN ".$va_temp_tables[sizeof($va_temp_tables) - 1]." AS tt ON swi.index_id = tt.row_id" : "")."
@@ -821,7 +816,7 @@ class WLPlugSearchEngineSqlSearch extends BaseSearchPlugin implements IWLPlugSea
 							
 							$vs_results_temp_table = array_pop($va_temp_tables);
 							
-							$this->opo_db->query("UPDATE {$vs_results_temp_table} SET row_id = row_id - {$increment}");
+							$this->opo_db->query("UPDATE {$vs_results_temp_table} SET row_id = row_id - 1");
 							$va_direct_query_temp_tables[$vs_results_temp_table] = true;
 							$vs_direct_sql_query = "SELECT swi.row_id, ca.boost 
 													FROM {$vs_results_temp_table} ca
